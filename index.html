@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Dashboard – Fator de Risco</title>
+  <style>
+    body { font-family: Arial, sans-serif; background:#f4f4f4; margin:0; padding:20px; }
+    .container { max-width: 900px; margin: 0 auto; background:#fff; padding:20px; border-radius:8px; box-shadow:0 0 10px rgba(0,0,0,0.1); }
+    h1 { text-align:center; margin-bottom:10px; }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:15px; margin-top:20px; }
+    label { font-weight:bold; display:block; margin-bottom:5px; }
+    select, input { width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; }
+    button { margin-top:20px; width:100%; padding:10px; background:#007bff; color:#fff; border:none; border-radius:4px; font-size:16px; cursor:pointer; }
+    button:hover { background:#0056b3; }
+    .cards { display:grid; grid-template-columns:repeat(3,1fr); gap:15px; margin-top:25px; }
+    .card { padding:15px; border-radius:8px; color:#fff; text-align:center; }
+    .card.frf { background:#6c757d; }
+    .card.risco-baixo { background:#28a745; }
+    .card.risco-medio { background:#ffc107; color:#000; }
+    .card.risco-alto { background:#dc3545; }
+    .card.limite { background:#17a2b8; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>Definição de Limite por Fator de Risco</h1>
+  <p>Baseado na sua planilha publicada no Google Sheets.</p>
+
+  <div class="grid">
+    <div>
+      <label>Residência</label>
+      <select id="residencia"></select>
+    </div>
+    <div>
+      <label>SPC / SERASA</label>
+      <select id="spc"></select>
+    </div>
+    <div>
+      <label>Vínculo</label>
+      <select id="vinculo"></select>
+    </div>
+    <div>
+      <label>Frequência</label>
+      <select id="frequencia"></select>
+    </div>
+    <div>
+      <label>Pontualidade</label>
+      <select id="pontualidade"></select>
+    </div>
+    <div>
+      <label>Tipo de Cliente</label>
+      <select id="tipoCliente"></select>
+    </div>
+    <div>
+      <label>Renda (R$)</label>
+      <input type="number" id="renda" placeholder="Ex: 3000">
+    </div>
+    <div>
+      <label>Fator de Segurança</label>
+      <input type="number" id="fatorSeguranca" step="0.01" value="0.2">
+    </div>
+  </div>
+
+  <button id="btnCalcular">Calcular Risco e Limite</button>
+
+  <div class="cards">
+    <div class="card frf">
+      <h3>FRF</h3>
+      <p id="frfValor">–</p>
+    </div>
+    <div class="card" id="cardRisco">
+      <h3>Risco</h3>
+      <p id="riscoTexto">–</p>
+    </div>
+    <div class="card limite">
+      <h3>Limite Sugerido</h3>
+      <p id="limiteValor">–</p>
+    </div>
+  </div>
+</div>
+
+<script>
+const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR_0WXCUhs9HuDie8BHC8Kncc1mbnZruRgq9rMacNQvKbkoxzzeVYC-d2h17ZJ9gUV80GU7OUfpa5i3/pub?output=csv";
+
+let criterios = [];
+
+function parseCSV(text) {
+  const linhas = text.trim().split("\n");
+  const dados = [];
+  for (let i = 1; i < linhas.length; i++) { // pula cabeçalho
+    const cols = linhas[i].split(",");
+    if (cols.length >= 4) {
+      dados.push({
+        grupo: cols[0].trim(),
+        status: cols[1].trim(),
+        fr: parseFloat(cols[2].replace(",", ".")),
+        peso: parseFloat(cols[3].replace(",", "."))
+      });
+    }
+  }
+  return dados;
+}
+
+function carregarCriterios() {
+  fetch(CSV_URL)
+    .then(r => r.text())
+    .then(text => {
+      criterios = parseCSV(text);
+      preencherSelects();
+    })
+    .catch(err => console.error("Erro ao carregar CSV:", err));
+}
+
+function preencherSelects() {
+  preencherSelect("residencia", "Residência");
+  preencherSelect("spc", "SPC/SERASA");
+  preencherSelect("vinculo", "Vínculo");
+  preencherSelect("frequencia", "Frequência");
+  preencherSelect("pontualidade", "Pontualidade");
+  preencherSelect("tipoCliente", "Tipo de Cliente");
+}
+
+function preencherSelect(id, grupo) {
+  const select = document.getElementById(id);
+  select.innerHTML = "";
+  const opcoes = criterios.filter(c => c.grupo === grupo);
+  opcoes.forEach(c => {
+    const opt = document.createElement("option");
+    opt.value = c.status;
+    opt.textContent = c.status;
+    select.appendChild(opt);
+  });
+}
+
+function obterFRPeso(grupo, status) {
+  return criterios.find(c => c.grupo === grupo && c.status === status);
+}
+
+function calcularFRF() {
+  const selResidencia = document.getElementById("residencia").value;
+  const selSpc = document.getElementById("spc").value;
+  const selVinculo = document.getElementById("vinculo").value;
+  const selFreq = document.getElementById("frequencia").value;
+  const selPont = document.getElementById("pontualidade").value;
+  const selTipo = document.getElementById("tipoCliente").value;
+
+  const itens = [
+    obterFRPeso("Residência", selResidencia),
+    obterFRPeso("SPC/SERASA", selSpc),
+    obterFRPeso("Vínculo", selVinculo),
+    obterFRPeso("Frequência", selFreq),
+    obterFRPeso("Pontualidade", selPont),
+    obterFRPeso("Tipo de Cliente", selTipo)
+  ];
+
+  let somaProd = 0;
+  let somaPesos = 0;
+  itens.forEach(i => {
+    if (i) {
+      somaProd += i.fr * i.peso;
+      somaPesos += i.peso;
+    }
+  });
+
+  if (somaPesos === 0) return 0;
+  return somaProd / somaPesos;
+}
+
+function classificarRisco(frf) {
+  if (frf <= 0.20) return "BAIXO";
+  if (frf <= 0.40) return "MÉDIO";
+  return "ALTO";
+}
+
+function calcularLimite(frf, renda, fatorSeguranca) {
+  const capacidade = renda * fatorSeguranca;
+  const risco = classificarRisco(frf);
+  let fatorLimite = 1;
+  if (risco === "MÉDIO") fatorLimite = 0.7;
+  if (risco === "ALTO") fatorLimite = 0.4;
+  return capacidade * fatorLimite;
+}
+
+document.getElementById("btnCalcular").addEventListener("click", () => {
+  const renda = parseFloat(document.getElementById("renda").value || "0");
+  const fatorSeguranca = parseFloat(document.getElementById("fatorSeguranca").value || "0.2");
+
+  const frf = calcularFRF();
+  const risco = classificarRisco(frf);
+  const limite = calcularLimite(frf, renda, fatorSeguranca);
+
+  document.getElementById("frfValor").textContent = frf.toFixed(3);
+  document.getElementById("riscoTexto").textContent = risco;
+  document.getElementById("limiteValor").textContent = "R$ " + limite.toFixed(2);
+
+  const cardRisco = document.getElementById("cardRisco");
+  cardRisco.className = "card " + (
+    risco === "BAIXO" ? "risco-baixo" :
+    risco === "MÉDIO" ? "risco-medio" :
+    "risco-alto"
+  );
+});
+
+carregarCriterios();
+</script>
+</body>
+</html>
